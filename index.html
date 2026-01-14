@@ -209,9 +209,10 @@
                 Apanha os ELETRÕES (-) nos patamares.<br>
                 Leva-os para o FIO ELÉTRICO na base.<br>
                 Usa ESCADAS para subir/descer.<br>
-                Saltar pelos buracos tira pontos!<br>
+                Buracos Pequenos: Podes saltar.<br>
+                Buracos Grandes: <span style="color:#FFFF00">SPACE + SHIFT</span> para saltar!<br>
                 <span style="color: #ff9999">Cuidado: -100 Pontos = Perdes Vida!</span><br><br>
-                Setas: Mover/Saltar/Escadas
+                Setas: Mover/Saltar | Space+Shift: Super Salto
             </p>
             <button id="startBtn">COMEÇAR JOGO</button>
         </div>
@@ -272,7 +273,10 @@ const keys = {
     ArrowUp: false,
     ArrowDown: false,
     ArrowLeft: false,
-    ArrowRight: false
+    ArrowRight: false,
+    Space: false,
+    ShiftLeft: false,
+    ShiftRight: false
 };
 
 // --- CLASSES ---
@@ -285,6 +289,7 @@ class Player {
         this.carrying = 0; // Quantos eletrões carrega
         this.color = '#00FFFF'; // Ciano Spectrum
         this.facingRight = true;
+        this.isSuperJumping = false; // Estado para o salto longo
     }
 
     resetPosition() {
@@ -295,17 +300,22 @@ class Player {
         this.onGround = true; 
         this.onLadder = false;
         this.climbing = false;
+        this.isSuperJumping = false;
         // Rastrear a última altura segura para calcular penalidade de queda
         this.lastStableY = this.y; 
     }
 
     update() {
+        // Velocidade Horizontal (Aumenta se for Super Salto)
+        let currentSpeed = SPEED;
+        if (this.isSuperJumping) currentSpeed = 6; // Boost de velocidade para atravessar buracos grandes
+
         // Movimento Horizontal
         if (keys.ArrowLeft) {
-            this.dx = -SPEED;
+            this.dx = -currentSpeed;
             this.facingRight = false;
         } else if (keys.ArrowRight) {
-            this.dx = SPEED;
+            this.dx = currentSpeed;
             this.facingRight = true;
         } else {
             this.dx = 0;
@@ -330,6 +340,7 @@ class Player {
             if (keys.ArrowUp || keys.ArrowDown) {
                 this.climbing = true;
                 this.onLadder = true;
+                this.isSuperJumping = false; // Cancela super salto se agarrar escada
                 if (Math.abs((this.x + this.w/2) - ladderCenter) < 10) {
                     this.x = ladderCenter - this.w/2;
                 }
@@ -351,9 +362,20 @@ class Player {
             if (keys.ArrowUp) this.dy = -LADDER_SPEED;
             if (keys.ArrowDown) this.dy = LADDER_SPEED;
         } else {
-            // Salto
-            if (keys.ArrowUp && this.onGround) {
-                this.dy = JUMP_FORCE;
+            // Lógica de Salto
+            let jumpInput = keys.ArrowUp || keys.Space;
+            let shiftInput = keys.ShiftLeft || keys.ShiftRight;
+
+            if (jumpInput && this.onGround) {
+                // Se pressionar SPACE + SHIFT: Super Salto
+                if (keys.Space && shiftInput) {
+                    this.dy = -10; // Força extra (normal é -8.5)
+                    this.isSuperJumping = true;
+                } else {
+                    // Salto Normal
+                    this.dy = JUMP_FORCE;
+                    this.isSuperJumping = false;
+                }
                 this.onGround = false;
             }
             this.dy += GRAVITY;
@@ -381,6 +403,7 @@ class Player {
             this.dy = 0;
             this.onGround = true;
             this.climbing = false;
+            this.isSuperJumping = false; // Reset Super Salto
             this.depositElectrons();
         }
 
@@ -402,6 +425,7 @@ class Player {
                     this.y = p.y - this.h;
                     this.dy = 0;
                     this.onGround = true;
+                    this.isSuperJumping = false; // Reset Super Salto
                 }
             }
         }
@@ -439,6 +463,14 @@ class Player {
 
         ctx.strokeStyle = '#FFFFFF';
         ctx.fillStyle = this.color;
+        
+        // Efeito visual se estiver em Super Salto
+        if (this.isSuperJumping) {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#FFFF00';
+            ctx.fillStyle = '#FFFF00';
+        }
+
         ctx.lineWidth = 2;
         ctx.lineCap = 'round';
 
@@ -447,6 +479,8 @@ class Player {
         ctx.arc(cx, this.y + 6, 6, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
+
+        ctx.shadowBlur = 0; // Reset shadow
 
         // 2. Tronco
         ctx.beginPath();
@@ -457,6 +491,8 @@ class Player {
         // 3. Braços
         ctx.beginPath();
         ctx.strokeStyle = this.color;
+        if (this.isSuperJumping) ctx.strokeStyle = '#FFFF00'; // Braços amarelos no super salto
+
         ctx.lineWidth = 3;
         ctx.moveTo(cx - 4, this.y + 14);
         ctx.lineTo(cx - 12, this.y + 20 + animOffset);
@@ -616,27 +652,55 @@ function generateLevel(lvl) {
     
     const rows = [450, 350, 250, 150];
     
+    // Distância máxima aproximada do salto é ~136px.
+    // Buracos pequenos: < 100px.
+    // Buracos grandes: > 150px.
+
     rows.forEach((y, i) => {
-        let numPlats = 1 + Math.floor(Math.random() * 2);
-        if (lvl > 5) numPlats++;
-
-        let segmentWidth = canvas.width / numPlats;
-        let laddersAddedInThisRow = false; // Flag para rastrear se criámos escada nesta fila
-
-        // 1. Criar Plataformas e Escadas Aleatórias
-        for (let j = 0; j < numPlats; j++) {
-            let gap = Math.random() * 50;
-            let w = segmentWidth - gap - 20;
-            let x = (j * segmentWidth) + 10;
+        let currentX = 10;
+        let rowPlatforms = [];
+        
+        // Gerar plataformas da esquerda para a direita
+        while (currentX < canvas.width - 50) {
+            // Largura aleatória da plataforma
+            let minW = 60;
+            let maxW = 300;
+            let w = Math.floor(Math.random() * (maxW - minW + 1)) + minW;
             
-            let p = { x: x, y: y, w: w, h: 15 };
-            platforms.push(p);
+            // Garantir que não ultrapassa o limite do canvas
+            if (currentX + w > canvas.width - 10) {
+                w = canvas.width - 10 - currentX;
+            }
 
-            // Escadas Aleatórias
-            if (Math.random() > 0.3) {
-                let lx = x + Math.random() * (w - 30);
+            if (w >= 40) { // Adicionar apenas se for viável
+                let p = { x: currentX, y: y, w: w, h: 15 };
+                platforms.push(p);
+                rowPlatforms.push(p);
+            }
+            
+            currentX += w;
+            
+            // Decidir tipo de buraco: Pequeno (Saltável) ou Grande (Queda)
+            if (currentX < canvas.width - 50) {
+                let isLargeGap = Math.random() < 0.35; // 35% probabilidade de buraco grande
+                let gap = 0;
+                if (isLargeGap) {
+                    gap = 150 + Math.random() * 80; // 150px a 230px (Impossível saltar)
+                } else {
+                    gap = 40 + Math.random() * 60; // 40px a 100px (Fácil de saltar)
+                }
+                currentX += gap;
+            }
+        }
+
+        // Adicionar Escadas e Itens às plataformas geradas
+        let laddersAddedInThisRow = false;
+        
+        rowPlatforms.forEach(p => {
+            // Escadas Aleatórias (para subir/descer)
+            if (Math.random() < 0.25) { 
+                let lx = p.x + Math.random() * (p.w - 30);
                 let lh = 100;
-                if (i === 0) lh = 100; 
                 ladders.push({ x: lx, y: y, w: 30, h: lh + 15 });
                 laddersAddedInThisRow = true;
             }
@@ -651,22 +715,14 @@ function generateLevel(lvl) {
             if (lvl > 1 && Math.random() < (0.2 + (lvl * 0.05))) {
                 protons.push(new Proton(p));
             }
-        }
+        });
 
-        // 2) LÓGICA ALTERADA: Garantir pelo menos 1 escada se nenhuma foi criada
-        if (!laddersAddedInThisRow && platforms.length > 0) {
-            // Filtra as plataformas desta linha (y)
-            let currentLevelPlatforms = platforms.filter(plat => plat.y === y);
-            if (currentLevelPlatforms.length > 0) {
-                // Escolhe uma plataforma aleatória desta linha
-                let randomP = currentLevelPlatforms[Math.floor(Math.random() * currentLevelPlatforms.length)];
-                
-                // Cria a escada
-                let lx = randomP.x + Math.random() * (randomP.w - 30);
-                let lh = 100;
-                // Altura padrão entre andares é 100px. A escada tem lh + 15 para sobrepor.
-                ladders.push({ x: lx, y: y, w: 30, h: lh + 15 });
-            }
+        // Garantir pelo menos 1 escada nesta linha se nenhuma foi criada aleatoriamente
+        if (!laddersAddedInThisRow && rowPlatforms.length > 0) {
+            let randomP = rowPlatforms[Math.floor(Math.random() * rowPlatforms.length)];
+            let lx = randomP.x + Math.random() * (randomP.w - 30);
+            let lh = 100;
+            ladders.push({ x: lx, y: y, w: 30, h: lh + 15 });
         }
     });
 
