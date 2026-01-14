@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Alimenta esta Corrente</title>
+    <title>Alimenta esta Corrente v2</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
@@ -209,7 +209,8 @@
                 Apanha os ELETRÕES (-) nos patamares.<br>
                 Leva-os para o FIO ELÉTRICO na base.<br>
                 Usa ESCADAS para subir/descer.<br>
-                Saltar pelos buracos tira pontos!<br><br>
+                Saltar pelos buracos tira pontos!<br>
+                <span style="color: #ff9999">Cuidado: -100 Pontos = Perdes Vida!</span><br><br>
                 Setas: Mover/Saltar/Escadas
             </p>
             <button id="startBtn">COMEÇAR JOGO</button>
@@ -407,11 +408,18 @@ class Player {
     }
 
     applyFallPenalty() {
-        // Só aplica se não tiver penalizado no mesmo frame
+        // Aplica a penalidade
         score -= FALL_PENALTY_POINTS;
-        // if (score < 0) score = 0; // Se quiseres impedir score negativo
         scoreEl.innerText = score;
         
+        // 1) LÓGICA ALTERADA: Se chegar a -100, perde vida
+        if (score <= -100) {
+            // Chama a função de morte (que reseta o score e tira vida)
+            playerHit();
+            // Retorna para evitar mostrar o texto flutuante, já que o nível vai resetar
+            return;
+        }
+
         // Texto de penalidade (Vermelho)
         showFloatingText(`-${FALL_PENALTY_POINTS}`, this.x, this.y - 10, '#FF0000');
         
@@ -613,7 +621,9 @@ function generateLevel(lvl) {
         if (lvl > 5) numPlats++;
 
         let segmentWidth = canvas.width / numPlats;
+        let laddersAddedInThisRow = false; // Flag para rastrear se criámos escada nesta fila
 
+        // 1. Criar Plataformas e Escadas Aleatórias
         for (let j = 0; j < numPlats; j++) {
             let gap = Math.random() * 50;
             let w = segmentWidth - gap - 20;
@@ -622,12 +632,13 @@ function generateLevel(lvl) {
             let p = { x: x, y: y, w: w, h: 15 };
             platforms.push(p);
 
-            // Escadas
+            // Escadas Aleatórias
             if (Math.random() > 0.3) {
                 let lx = x + Math.random() * (w - 30);
                 let lh = 100;
                 if (i === 0) lh = 100; 
                 ladders.push({ x: lx, y: y, w: 30, h: lh + 15 });
+                laddersAddedInThisRow = true;
             }
 
             // Eletrões
@@ -641,13 +652,23 @@ function generateLevel(lvl) {
                 protons.push(new Proton(p));
             }
         }
-    });
 
-    let groundLadders = ladders.filter(l => l.y === 450);
-    if (groundLadders.length === 0 && platforms.length > 0) {
-        let p = platforms.find(p => p.y === 450);
-        if(p) ladders.push({ x: p.x + 20, y: 450, w: 30, h: 100 });
-    }
+        // 2) LÓGICA ALTERADA: Garantir pelo menos 1 escada se nenhuma foi criada
+        if (!laddersAddedInThisRow && platforms.length > 0) {
+            // Filtra as plataformas desta linha (y)
+            let currentLevelPlatforms = platforms.filter(plat => plat.y === y);
+            if (currentLevelPlatforms.length > 0) {
+                // Escolhe uma plataforma aleatória desta linha
+                let randomP = currentLevelPlatforms[Math.floor(Math.random() * currentLevelPlatforms.length)];
+                
+                // Cria a escada
+                let lx = randomP.x + Math.random() * (randomP.w - 30);
+                let lh = 100;
+                // Altura padrão entre andares é 100px. A escada tem lh + 15 para sobrepor.
+                ladders.push({ x: lx, y: y, w: 30, h: lh + 15 });
+            }
+        }
+    });
 
     player.resetPosition();
 }
@@ -675,6 +696,7 @@ function playerHit() {
         // Reiniciar o nível (volta ao início)
         // startLevel() regenera o layout e repõe tudo
         startLevel();
+        showMessage("VIDA PERDIDA!");
     }
 }
 
