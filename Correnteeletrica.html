@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Alimenta esta Corrente</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #202020;
+            color: white;
+            font-family: 'Press Start 2P', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none; /* Previne zoom e scroll em mobile */
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            border: 4px solid #444;
+        }
+
+        canvas {
+            display: block;
+            background-color: #000;
+            image-rendering: pixelated;
+        }
+
+        /* Interface da Lâmpada (HUD) */
+        #hud-layer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: calc(100% - 20px);
+            pointer-events: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .stats {
+            text-shadow: 2px 2px #000;
+            line-height: 1.5;
+            font-size: 12px;
+        }
+
+        /* A Lâmpada Física (CSS) */
+        #lamp-container {
+            width: 40px;
+            height: 60px;
+            position: relative;
+            margin-right: 10px;
+        }
+
+        #bulb {
+            width: 30px;
+            height: 30px;
+            background-color: #333; /* Apagada */
+            border-radius: 50%;
+            border: 2px solid #555;
+            position: absolute;
+            bottom: 0;
+            left: 5px;
+            transition: background-color 0.1s, box-shadow 0.1s;
+            z-index: 2;
+        }
+
+        #bulb::after {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: 8px;
+            width: 14px;
+            height: 12px;
+            background-color: #666; /* Base da rosca */
+            border-bottom: 2px solid #333;
+        }
+
+        /* Classe para acender a lâmpada */
+        .bulb-on {
+            background-color: #fffFA0 !important;
+            box-shadow: 0 0 20px 5px #fffFA0;
+            border-color: #fff !important;
+        }
+
+        /* Mensagens de Sobreposição */
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            z-index: 10;
+        }
+
+        h1 {
+            color: #ffff00;
+            font-size: 24px;
+            margin-bottom: 20px;
+            text-shadow: 4px 4px #ff0000;
+            line-height: 1.5;
+        }
+
+        p {
+            font-size: 10px;
+            color: #00ffff;
+            margin-bottom: 30px;
+            max-width: 80%;
+            line-height: 1.6;
+        }
+
+        button {
+            background: #ff0000;
+            color: #fff;
+            border: 4px solid #fff;
+            padding: 15px 30px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        button:active {
+            background: #cc0000;
+            transform: translateY(2px);
+        }
+
+        /* Controlos Mobile */
+        #mobile-controls {
+            display: none;
+            width: 100%;
+            max-width: 800px;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+            margin-top: 10px;
+        }
+
+        .d-pad {
+            display: flex;
+            gap: 10px;
+        }
+
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        
+        .control-btn:active {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        @media (max-width: 800px) {
+            #mobile-controls {
+                display: flex;
+            }
+            canvas {
+                width: 100%;
+                height: auto;
+            }
+            #game-container {
+                width: 95%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="hud-layer">
+            <div class="stats">
+                SCORE: <span id="scoreVal">0</span><br>
+                LEVEL: <span id="levelVal">1</span><br>
+                LIVES: <span id="livesVal">5</span>
+            </div>
+            <div id="lamp-container">
+                <div id="bulb"></div>
+            </div>
+        </div>
+
+        <div id="overlay">
+            <h1>ALIMENTA ESTA<br>CORRENTE</h1>
+            <p>
+                Apanha os ELETRÕES (-) nos patamares.<br>
+                Leva-os para o FIO ELÉTRICO na base.<br>
+                Usa ESCADAS para subir/descer.<br>
+                Saltar pelos buracos tira pontos!<br><br>
+                Setas: Mover/Saltar/Escadas
+            </p>
+            <button id="startBtn">COMEÇAR JOGO</button>
+        </div>
+    </div>
+
+    <div id="mobile-controls">
+        <div class="d-pad">
+            <div class="control-btn" id="btn-left">←</div>
+            <div class="control-btn" id="btn-right">→</div>
+            <div class="control-btn" id="btn-down">↓</div>
+        </div>
+        <div class="control-btn" id="btn-jump">↑</div>
+    </div>
+
+<script>
+/**
+ * LÓGICA DO JOGO "ALIMENTA ESTA CORRENTE"
+ * Estilo ZX Spectrum
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('scoreVal');
+const levelEl = document.getElementById('levelVal');
+const livesEl = document.getElementById('livesVal');
+const bulbEl = document.getElementById('bulb');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+// Constantes do Jogo
+const GRAVITY = 0.5;
+// REDUZIDO para não alcançar o patamar de cima (distância ~100px). 
+// Com -8.5, altura max ~= 72px.
+const JUMP_FORCE = -8.5; 
+const SPEED = 4;
+const LADDER_SPEED = 3;
+const FALL_PENALTY_THRESHOLD = 60; // Se cair mais de 60px sem escada, é penalidade
+const FALL_PENALTY_POINTS = 50;
+
+// Estado do Jogo
+let gameState = 'START'; // START, PLAYING, LEVEL_DONE, GAMEOVER, EXPLODING
+let level = 1;
+let score = 0;
+let lives = 5;
+let frames = 0;
+let explosionTimer = 0; // Timer para o efeito de choque
+
+// Objetos do Jogo
+let player;
+let platforms = [];
+let ladders = [];
+let electrons = [];
+let protons = [];
+let wireY = 550; // Posição Y do fio elétrico
+
+// Inputs
+const keys = {
+    ArrowUp: false,
+    ArrowDown: false,
+    ArrowLeft: false,
+    ArrowRight: false
+};
+
+// --- CLASSES ---
+
+class Player {
+    constructor() {
+        this.w = 24;
+        this.h = 32;
+        this.resetPosition();
+        this.carrying = 0; // Quantos eletrões carrega
+        this.color = '#00FFFF'; // Ciano Spectrum
+        this.facingRight = true;
+    }
+
+    resetPosition() {
+        this.x = 50;
+        this.y = wireY - this.h - 10;
+        this.dx = 0;
+        this.dy = 0;
+        this.onGround = true; 
+        this.onLadder = false;
+        this.climbing = false;
+        // Rastrear a última altura segura para calcular penalidade de queda
+        this.lastStableY = this.y; 
+    }
+
+    update() {
+        // Movimento Horizontal
+        if (keys.ArrowLeft) {
+            this.dx = -SPEED;
+            this.facingRight = false;
+        } else if (keys.ArrowRight) {
+            this.dx = SPEED;
+            this.facingRight = true;
+        } else {
+            this.dx = 0;
+        }
+
+        // Verificar Escadas
+        let touchingLadder = false;
+        let ladderCenter = 0;
+        
+        let searchH = this.h;
+        if (keys.ArrowDown) searchH += 5;
+
+        for (let ladder of ladders) {
+            if (rectIntersect(this.x, this.y, this.w, searchH, ladder.x, ladder.y, ladder.w, ladder.h)) {
+                touchingLadder = true;
+                ladderCenter = ladder.x + ladder.w / 2;
+                break;
+            }
+        }
+
+        if (touchingLadder) {
+            if (keys.ArrowUp || keys.ArrowDown) {
+                this.climbing = true;
+                this.onLadder = true;
+                if (Math.abs((this.x + this.w/2) - ladderCenter) < 10) {
+                    this.x = ladderCenter - this.w/2;
+                }
+            }
+        } else {
+            this.climbing = false;
+            this.onLadder = false;
+        }
+
+        // Atualizar lastStableY se estiver seguro (chão ou escada)
+        // Fazemos isto ANTES de aplicar gravidade
+        if (this.onGround || this.climbing) {
+            this.lastStableY = this.y;
+        }
+
+        // Movimento Vertical e Gravidade
+        if (this.climbing) {
+            this.dy = 0;
+            if (keys.ArrowUp) this.dy = -LADDER_SPEED;
+            if (keys.ArrowDown) this.dy = LADDER_SPEED;
+        } else {
+            // Salto
+            if (keys.ArrowUp && this.onGround) {
+                this.dy = JUMP_FORCE;
+                this.onGround = false;
+            }
+            this.dy += GRAVITY;
+        }
+
+        // Aplicar movimento
+        this.x += this.dx;
+        this.y += this.dy;
+
+        // Limites do ecrã
+        if (this.x < 0) this.x = 0;
+        if (this.x + this.w > canvas.width) this.x = canvas.width - this.w;
+
+        // Colisões com Plataformas
+        this.onGround = false;
+        
+        // Fio elétrico (Chão base)
+        if (this.y + this.h > wireY) {
+            // Checar penalidade de queda
+            if (this.dy > 0 && (this.y - this.lastStableY > FALL_PENALTY_THRESHOLD)) {
+                this.applyFallPenalty();
+            }
+
+            this.y = wireY - this.h;
+            this.dy = 0;
+            this.onGround = true;
+            this.climbing = false;
+            this.depositElectrons();
+        }
+
+        // Se estiver a subir escada, ignora colisões de plataforma
+        if (!this.climbing) {
+            for (let p of platforms) {
+                if (
+                    this.x < p.x + p.w &&
+                    this.x + this.w > p.x &&
+                    this.y + this.h >= p.y &&
+                    this.y + this.h <= p.y + p.h + 10 && 
+                    this.dy >= 0
+                ) {
+                    // Checar penalidade de queda
+                    if ((this.y - this.lastStableY) > FALL_PENALTY_THRESHOLD) {
+                        this.applyFallPenalty();
+                    }
+
+                    this.y = p.y - this.h;
+                    this.dy = 0;
+                    this.onGround = true;
+                }
+            }
+        }
+    }
+
+    applyFallPenalty() {
+        // Só aplica se não tiver penalizado no mesmo frame
+        score -= FALL_PENALTY_POINTS;
+        // if (score < 0) score = 0; // Se quiseres impedir score negativo
+        scoreEl.innerText = score;
+        
+        // Texto de penalidade (Vermelho)
+        showFloatingText(`-${FALL_PENALTY_POINTS}`, this.x, this.y - 10, '#FF0000');
+        
+        // Atualiza o lastStableY para evitar penalidade dupla imediata
+        this.lastStableY = this.y;
+    }
+
+    draw() {
+        ctx.save();
+        
+        let animOffset = 0;
+        if (this.dx !== 0 || this.climbing) {
+            animOffset = Math.sin(frames * 0.4) * 5;
+        }
+
+        const cx = this.x + this.w / 2;
+
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.fillStyle = this.color;
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+
+        // 1. Cabeça
+        ctx.beginPath();
+        ctx.arc(cx, this.y + 6, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 2. Tronco
+        ctx.beginPath();
+        ctx.rect(cx - 4, this.y + 12, 8, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        // 3. Braços
+        ctx.beginPath();
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 3;
+        ctx.moveTo(cx - 4, this.y + 14);
+        ctx.lineTo(cx - 12, this.y + 20 + animOffset);
+        ctx.moveTo(cx + 4, this.y + 14);
+        ctx.lineTo(cx + 12, this.y + 20 - animOffset);
+        ctx.stroke();
+
+        // 4. Pernas
+        ctx.beginPath();
+        ctx.moveTo(cx - 2, this.y + 26);
+        ctx.lineTo(cx - 6, this.y + 32 - animOffset);
+        ctx.moveTo(cx + 2, this.y + 26);
+        ctx.lineTo(cx + 6, this.y + 32 + animOffset);
+        ctx.stroke();
+        
+        // 5. Olhos
+        ctx.fillStyle = 'black';
+        let eyeX = this.facingRight ? 2 : -2;
+        ctx.fillRect(cx + eyeX, this.y + 4, 2, 2);
+
+        // Indicador
+        if (this.carrying > 0) {
+            ctx.fillStyle = '#FF0000';
+            ctx.beginPath();
+            ctx.arc(this.x + this.w/2, this.y - 12, 6, 0, Math.PI*2);
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.carrying, this.x + this.w/2, this.y - 9);
+            ctx.textAlign = 'left';
+        }
+        
+        ctx.restore();
+    }
+
+    depositElectrons() {
+        if (this.carrying > 0) {
+            score += this.carrying * 100;
+            scoreEl.innerText = score; // Atualizar UI
+            flashBulb();
+            showFloatingText(`+${this.carrying * 100}`, this.x, this.y - 20, '#FFFF00');
+            this.carrying = 0;
+            checkLevelCompletion();
+        }
+    }
+}
+
+class Proton {
+    constructor(platform) {
+        this.w = 20;
+        this.h = 20;
+        this.platform = platform;
+        this.x = platform.x + Math.random() * (platform.w - this.w);
+        this.y = platform.y - this.h;
+        this.speed = (1 + (level * 0.2)) * (Math.random() > 0.5 ? 1 : -1); 
+    }
+
+    update() {
+        this.x += this.speed;
+        if (this.x <= this.platform.x || this.x + this.w >= this.platform.x + this.platform.w) {
+            this.speed *= -1;
+        }
+        if (rectIntersect(this.x, this.y, this.w, this.h, player.x, player.y, player.w, player.h)) {
+            startExplosion();
+        }
+    }
+
+    draw() {
+        ctx.fillStyle = '#00FF00';
+        ctx.beginPath();
+        ctx.arc(this.x + this.w/2, this.y + this.h/2, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText('+', this.x + 5, this.y + 15);
+    }
+}
+
+class Electron {
+    constructor(platform) {
+        this.w = 16;
+        this.h = 16;
+        this.x = platform.x + Math.random() * (platform.w - this.w);
+        this.y = platform.y - this.h - 5;
+        this.collected = false;
+        this.floatY = 0;
+    }
+
+    update() {
+        if (this.collected) return;
+        this.floatY = Math.sin(frames * 0.1) * 3;
+        if (rectIntersect(this.x, this.y, this.w, this.h, player.x, player.y, player.w, player.h)) {
+            this.collected = true;
+            player.carrying++;
+        }
+    }
+
+    draw() {
+        if (this.collected) return;
+        ctx.fillStyle = '#FF0000';
+        ctx.beginPath();
+        ctx.arc(this.x + this.w/2, this.y + this.h/2 + this.floatY, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText('-', this.x + 6, this.y + 12 + this.floatY);
+    }
+}
+
+// --- FUNÇÕES DE AJUDA ---
+
+function rectIntersect(x1, y1, w1, h1, x2, y2, w2, h2) {
+    return x2 < x1 + w1 && x2 + w2 > x1 && y2 < y1 + h1 && y2 + h2 > y1;
+}
+
+function flashBulb() {
+    bulbEl.classList.add('bulb-on');
+    setTimeout(() => {
+        bulbEl.classList.remove('bulb-on');
+    }, 500);
+}
+
+let floatingTexts = [];
+function showFloatingText(text, x, y, color = '#FFFF00') {
+    floatingTexts.push({text, x, y, life: 60, color});
+}
+
+function updateFloatingTexts() {
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        let ft = floatingTexts[i];
+        ft.y -= 1;
+        ft.life--;
+        // Fade out
+        let alpha = ft.life / 60;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = ft.color;
+        ctx.font = '12px "Press Start 2P"';
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.globalAlpha = 1.0;
+        
+        if (ft.life <= 0) floatingTexts.splice(i, 1);
+    }
+}
+
+// --- GERADOR DE NÍVEIS ---
+
+function generateLevel(lvl) {
+    platforms = [];
+    ladders = [];
+    electrons = [];
+    protons = [];
+    
+    const rows = [450, 350, 250, 150];
+    
+    rows.forEach((y, i) => {
+        let numPlats = 1 + Math.floor(Math.random() * 2);
+        if (lvl > 5) numPlats++;
+
+        let segmentWidth = canvas.width / numPlats;
+
+        for (let j = 0; j < numPlats; j++) {
+            let gap = Math.random() * 50;
+            let w = segmentWidth - gap - 20;
+            let x = (j * segmentWidth) + 10;
+            
+            let p = { x: x, y: y, w: w, h: 15 };
+            platforms.push(p);
+
+            // Escadas
+            if (Math.random() > 0.3) {
+                let lx = x + Math.random() * (w - 30);
+                let lh = 100;
+                if (i === 0) lh = 100; 
+                ladders.push({ x: lx, y: y, w: 30, h: lh + 15 });
+            }
+
+            // Eletrões
+            let numElectrons = 1 + Math.floor(Math.random() * (lvl/2)); 
+            for (let e=0; e<numElectrons; e++) {
+                electrons.push(new Electron(p));
+            }
+
+            // Protões
+            if (lvl > 1 && Math.random() < (0.2 + (lvl * 0.05))) {
+                protons.push(new Proton(p));
+            }
+        }
+    });
+
+    let groundLadders = ladders.filter(l => l.y === 450);
+    if (groundLadders.length === 0 && platforms.length > 0) {
+        let p = platforms.find(p => p.y === 450);
+        if(p) ladders.push({ x: p.x + 20, y: 450, w: 30, h: 100 });
+    }
+
+    player.resetPosition();
+}
+
+// --- CICLO DO JOGO ---
+
+function startExplosion() {
+    if (gameState === 'EXPLODING') return;
+    gameState = 'EXPLODING';
+    explosionTimer = 60; // Duração do choque (aprox 1 segundo)
+}
+
+function playerHit() {
+    gameState = 'PLAYING';
+    lives--;
+    livesEl.innerText = lives;
+
+    // Resetar score (penalidade total)
+    score = 0;
+    scoreEl.innerText = score;
+
+    if (lives <= 0) {
+        endGame();
+    } else {
+        // Reiniciar o nível (volta ao início)
+        // startLevel() regenera o layout e repõe tudo
+        startLevel();
+    }
+}
+
+function checkLevelCompletion() {
+    let remaining = electrons.filter(e => !e.collected).length;
+    if (remaining === 0 && player.carrying === 0) {
+        level++;
+        if (level > 10) {
+            winGame();
+        } else {
+            startLevel();
+        }
+    }
+}
+
+function startLevel() {
+    levelEl.innerText = level;
+    generateLevel(level);
+    gameState = 'PLAYING';
+    showMessage(`NÍVEL ${level}`);
+}
+
+function startGame() {
+    score = 0;
+    level = 1;
+    lives = 5;
+    scoreEl.innerText = score;
+    livesEl.innerText = lives;
+    overlay.style.display = 'none';
+    player = new Player();
+    startLevel();
+    loop();
+}
+
+function endGame() {
+    gameState = 'GAMEOVER';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `<h1>GAME OVER</h1><p>A corrente foi cortada.</p><p>Pontuação Final: ${score}</p><button onclick="resetUI()">Tentar Novamente</button>`;
+}
+
+function winGame() {
+    gameState = 'WIN';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `<h1>PARABÉNS!</h1><p>Alimentaste a corrente com sucesso!</p><p>Pontuação Final: ${score}</p><button onclick="resetUI()">Jogar de Novo</button>`;
+}
+
+function resetUI() {
+    location.reload(); 
+}
+
+let msgTimer = 0;
+let currentMsg = "";
+
+function showMessage(txt) {
+    currentMsg = txt;
+    msgTimer = 120;
+}
+
+function drawWire() {
+    let grad = ctx.createLinearGradient(0, wireY, 0, canvas.height);
+    grad.addColorStop(0, '#555');
+    grad.addColorStop(0.5, '#AAA');
+    grad.addColorStop(1, '#333');
+    
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, wireY, canvas.width, canvas.height - wireY);
+    
+    ctx.strokeStyle = '#B87333';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, wireY + 10);
+    ctx.lineTo(canvas.width, wireY + 10);
+    ctx.moveTo(0, wireY + 30);
+    ctx.lineTo(canvas.width, wireY + 30);
+    ctx.stroke();
+
+    ctx.fillStyle = '#000';
+    ctx.font = '10px monospace';
+    ctx.fillText("FIO CONDUTOR - DEPOSITA AQUI (-)", 20, wireY + 25);
+}
+
+function drawBackground() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+}
+
+function loop() {
+    // Permite que o loop corra durante EXPLODING para animar o flash
+    if (gameState !== 'PLAYING' && gameState !== 'EXPLODING') return;
+
+    // --- LOGICA DE UPDATE ---
+    if (gameState === 'PLAYING') {
+        frames++;
+        player.update();
+        protons.forEach(p => p.update());
+        electrons.forEach(e => e.update());
+    } else if (gameState === 'EXPLODING') {
+        explosionTimer--;
+        if (explosionTimer <= 0) {
+            playerHit();
+        }
+    }
+
+    // --- DESENHO ---
+    drawBackground();
+
+    drawWire();
+
+    // Escadas
+    ctx.fillStyle = '#00AAAA';
+    ladders.forEach(l => {
+        for(let y=l.y; y<l.y+l.h; y+=10) {
+            ctx.fillRect(l.x, y, l.w, 4);
+        }
+        ctx.fillRect(l.x, l.y, 4, l.h);
+        ctx.fillRect(l.x + l.w - 4, l.y, 4, l.h);
+    });
+
+    // Plataformas
+    ctx.fillStyle = '#AA00AA';
+    platforms.forEach(p => {
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.strokeStyle = '#FF00FF';
+        ctx.strokeRect(p.x, p.y, p.w, p.h);
+    });
+
+    electrons.forEach(e => e.draw());
+    protons.forEach(p => p.draw());
+    player.draw();
+    updateFloatingTexts();
+
+    // Mensagens de Nível
+    if (msgTimer > 0 && gameState === 'PLAYING') {
+        ctx.fillStyle = 'yellow';
+        ctx.font = '30px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
+        ctx.textAlign = 'left';
+        msgTimer--;
+    }
+
+    // EFEITO DE CHOQUE / REBENTAMENTO
+    if (gameState === 'EXPLODING') {
+        // Flash intermitente (Branco e Amarelo Claro)
+        let alpha = Math.random() * 0.6 + 0.4;
+        let color = Math.random() > 0.5 ? `rgba(255, 255, 255, ${alpha})` : `rgba(255, 255, 150, ${alpha})`;
+        
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Texto REBENTASTE
+        ctx.save();
+        ctx.translate(canvas.width/2, canvas.height/2);
+        // Ligeira vibração no texto
+        ctx.translate((Math.random()-0.5)*10, (Math.random()-0.5)*10);
+        
+        ctx.fillStyle = '#FF0000';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 4;
+        ctx.font = '50px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.strokeText("REBENTASTE", 0, 0);
+        ctx.fillText("REBENTASTE", 0, 0);
+        
+        ctx.restore();
+    }
+
+    requestAnimationFrame(loop);
+}
+
+window.addEventListener('keydown', e => {
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
+});
+
+window.addEventListener('keyup', e => {
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = false;
+});
+
+const btnLeft = document.getElementById('btn-left');
+const btnRight = document.getElementById('btn-right');
+const btnUp = document.getElementById('btn-jump');
+const btnDown = document.getElementById('btn-down');
+
+const addTouch = (elem, code) => {
+    elem.addEventListener('touchstart', (e) => { e.preventDefault(); keys[code] = true; });
+    elem.addEventListener('touchend', (e) => { e.preventDefault(); keys[code] = false; });
+    elem.addEventListener('mousedown', (e) => { e.preventDefault(); keys[code] = true; });
+    elem.addEventListener('mouseup', (e) => { e.preventDefault(); keys[code] = false; });
+};
+
+addTouch(btnLeft, 'ArrowLeft');
+addTouch(btnRight, 'ArrowRight');
+addTouch(btnUp, 'ArrowUp');
+addTouch(btnDown, 'ArrowDown');
+
+startBtn.addEventListener('click', startGame);
+
+</script>
+</body>
+</html>
